@@ -21,8 +21,10 @@ jobs:
           flutter-version: '3.27.0'
           channel: 'stable'
 
-      - name: Ensure Android platform files exist
-        run: flutter create . --platforms=android --project-name dayledger --org com.example
+      - name: Generate Android platform files
+        run: |
+          flutter create --platforms=android --project-name dayledger --org com.example /tmp/scaffold
+          cp -r /tmp/scaffold/android .
 
       - name: Install dependencies
         run: flutter pub get
