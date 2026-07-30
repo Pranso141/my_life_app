@@ -63,4 +63,35 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       drawer: Drawer(
         child: ListView(
           children: [
-            const
+            const DrawerHeader(child: Text('DayLedger', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold))),
+            ListTile(
+              leading: const Icon(Icons.calendar_month),
+              title: const Text('Monthly Food Spend'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const MonthlyFoodSummaryScreen()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.bar_chart),
+              title: const Text('Monthly Expense History'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const MonthlyExpenseHistoryScreen()));
+              },
+            ),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: const [
+          MealCycleScreen(),
+          RecurringExpensesScreen(),
+          WorkTodoScreen(),
+          ObjectivesScreen(),
+        ],
+      ),
+    );
+  }
+}
