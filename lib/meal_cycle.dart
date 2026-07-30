@@ -3,18 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
-class MealPlanDay {
-  final String lunch;
-  final String dinner;
+class FoodOption {
+  final String name;
   final double cost;
-  const MealPlanDay({required this.lunch, required this.dinner, required this.cost});
+  const FoodOption({required this.name, required this.cost});
 }
 
-// Edit these 3 lines any time to change your fixed rotation.
-const List<MealPlanDay> kMealCycle = [
-  MealPlanDay(lunch: 'Veg Biryani (₹63)', dinner: 'Paneer Masala (₹86) + 3 Chapatis (₹21)', cost: 210),
-  MealPlanDay(lunch: 'Soyabean Biryani (₹84)', dinner: 'Chana Masala (₹69) + 4 Chapatis (₹28)', cost: 221),
-  MealPlanDay(lunch: 'Aloo Jeera (₹53) + 2 Chapatis (₹14)', dinner: 'Mushroom Fried Rice (₹95)', cost: 202),
+// Edit these lists any time to add/remove/rename meal combos or fix prices.
+const List<FoodOption> kLunchOptions = [
+  FoodOption(name: 'Veg Biryani', cost: 63),
+  FoodOption(name: 'Soyabean Biryani', cost: 84),
+  FoodOption(name: 'Aloo Jeera + 2 Chapatis', cost: 67),
+];
+
+const List<FoodOption> kDinnerOptions = [
+  FoodOption(name: 'Paneer Masala + 3 Chapatis', cost: 107),
+  FoodOption(name: 'Chana Masala + 4 Chapatis', cost: 97),
+  FoodOption(name: 'Mushroom Fried Rice', cost: 95),
 ];
 
 const double kDailyBudget = 250;
@@ -35,13 +40,15 @@ class MealCycleScreen extends StatefulWidget {
 }
 
 class _MealCycleScreenState extends State<MealCycleScreen> {
-  static const _activationKey = 'meal_activation_by_date'; // date -> dayIndex
+  static const _ticksKey = 'food_ticks_by_date'; // date -> List<foodName>
   static const _extraKey = 'meal_extra_by_date'; // date -> List<ExtraExpense>
 
   String get _today => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-  Map<String, int> _activation = {};
+  Map<String, List<String>> _ticks = {};
   Map<String, List<ExtraExpense>> _extras = {};
+
+  static List<FoodOption> get _allOptions => [...kLunchOptions, ...kDinnerOptions];
 
   @override
   void initState() {
@@ -51,12 +58,12 @@ class _MealCycleScreenState extends State<MealCycleScreen> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final actRaw = prefs.getString(_activationKey);
+    final ticksRaw = prefs.getString(_ticksKey);
     final extRaw = prefs.getString(_extraKey);
     setState(() {
-      if (actRaw != null) {
-        final m = jsonDecode(actRaw) as Map<String, dynamic>;
-        _activation = m.map((k, v) => MapEntry(k, v as int));
+      if (ticksRaw != null) {
+        final m = jsonDecode(ticksRaw) as Map<String, dynamic>;
+        _ticks = m.map((k, v) => MapEntry(k, (v as List).cast<String>()));
       }
       if (extRaw != null) {
         final m = jsonDecode(extRaw) as Map<String, dynamic>;
@@ -66,9 +73,9 @@ class _MealCycleScreenState extends State<MealCycleScreen> {
     });
   }
 
-  Future<void> _saveActivation() async {
+  Future<void> _saveTicks() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_activationKey, jsonEncode(_activation));
+    await prefs.setString(_ticksKey, jsonEncode(_ticks));
   }
 
   Future<void> _saveExtras() async {
@@ -77,15 +84,16 @@ class _MealCycleScreenState extends State<MealCycleScreen> {
         _extraKey, jsonEncode(_extras.map((k, v) => MapEntry(k, v.map((e) => e.toJson()).toList()))));
   }
 
-  void _toggleDay(int dayIndex) {
+  void _toggleFood(String name) {
     setState(() {
-      if (_activation[_today] == dayIndex) {
-        _activation.remove(_today); // untick = deactivate
+      final todayList = _ticks.putIfAbsent(_today, () => []);
+      if (todayList.contains(name)) {
+        todayList.remove(name);
       } else {
-        _activation[_today] = dayIndex; // only one active per day
+        todayList.add(name);
       }
     });
-    _saveActivation();
+    _saveTicks();
   }
 
   void _addExtra() {
@@ -125,20 +133,50 @@ class _MealCycleScreenState extends State<MealCycleScreen> {
     _saveExtras();
   }
 
-  double get _todayCycleCost {
-    final active = _activation[_today];
-    return active != null ? kMealCycle[active].cost : 0;
+  double get _todayFoodCost {
+    final ticked = _ticks[_today] ?? [];
+    double total = 0;
+    for (final name in ticked) {
+      final match = _allOptions.where((o) => o.name == name);
+      if (match.isNotEmpty) total += match.first.cost;
+    }
+    return total;
   }
 
-  double get _todayExtraCost =>
-      (_extras[_today] ?? []).fold(0.0, (s, e) => s + e.cost);
+  double get _todayExtraCost => (_extras[_today] ?? []).fold(0.0, (s, e) => s + e.cost);
 
-  double get _todaySpent => _todayCycleCost + _todayExtraCost;
+  double get _todaySpent => _todayFoodCost + _todayExtraCost;
+
+  Widget _optionSection(String title, List<FoodOption> options, List<String> ticked) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4, left: 4),
+          child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
+        ),
+        ...options.map((option) {
+          final checked = ticked.contains(option.name);
+          return Card(
+            color: checked ? Colors.indigo.withOpacity(0.25) : null,
+            child: CheckboxListTile(
+              value: checked,
+              onChanged: (_) => _toggleFood(option.name),
+              title: Text(option.name),
+              secondary: Text('₹${option.cost.toStringAsFixed(0)}'),
+            ),
+          );
+        }),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final remaining = kDailyBudget - _todaySpent;
     final extras = _extras[_today] ?? [];
+    final ticked = _ticks[_today] ?? [];
+
     return Scaffold(
       body: ListView(
         padding: const EdgeInsets.all(12),
@@ -158,22 +196,8 @@ class _MealCycleScreenState extends State<MealCycleScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          const Text('Activate today\'s plan (tap the tick):', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          ...List.generate(kMealCycle.length, (i) {
-            final day = kMealCycle[i];
-            final active = _activation[_today] == i;
-            return Card(
-              color: active ? Colors.indigo.withOpacity(0.25) : null,
-              child: ListTile(
-                leading: Checkbox(value: active, onChanged: (_) => _toggleDay(i)),
-                title: Text('Day ${i + 1}: ${day.lunch}'),
-                subtitle: Text('${day.dinner}\nCost: ₹${day.cost.toStringAsFixed(0)}'),
-                isThreeLine: true,
-              ),
-            );
-          }),
+          _optionSection('Lunch options — tick what you had', kLunchOptions, ticked),
+          _optionSection('Dinner options — tick what you had', kDinnerOptions, ticked),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -191,7 +215,7 @@ class _MealCycleScreenState extends State<MealCycleScreen> {
                 ]),
               )),
           const SizedBox(height: 8),
-          Text('Note: this cycle resets daily — you must tick a plan again each day it applies.',
+          Text('Note: ticks reset daily — tick again each day it applies.',
               style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
         ],
       ),
