@@ -31,8 +31,10 @@ class RecurringExpensesScreen extends StatefulWidget {
 }
 
 class _RecurringExpensesScreenState extends State<RecurringExpensesScreen> {
-  static const _storageKey = 'recurring_expenses_by_month'; // monthKey -> {name: amount}
+  static const _storageKey = 'recurring_expenses_by_month';
+  static const _paidKey = 'recurring_paid_by_month';
   Map<String, Map<String, double>> _byMonth = {};
+  Map<String, Map<String, bool>> _paidByMonth = {};
   bool _loading = true;
 
   String get _currentMonthKey => DateFormat('yyyy-MM').format(DateTime.now());
@@ -51,7 +53,6 @@ class _RecurringExpensesScreenState extends State<RecurringExpensesScreen> {
       final m = jsonDecode(raw) as Map<String, dynamic>;
       data = m.map((k, v) => MapEntry(k, (v as Map<String, dynamic>).map((k2, v2) => MapEntry(k2, (v2 as num).toDouble()))));
     }
-    // Auto-create current month using device clock, defaulting to last month's values if present, else defaults.
     if (!data.containsKey(_currentMonthKey)) {
       final months = data.keys.toList()..sort();
       final lastMonth = months.isNotEmpty ? data[months.last] : null;
@@ -60,8 +61,20 @@ class _RecurringExpensesScreenState extends State<RecurringExpensesScreen> {
       };
       await _saveAll(data);
     }
+    final paidRaw = prefs.getString(_paidKey);
+    Map<String, Map<String, bool>> paidData = {};
+    if (paidRaw != null) {
+      final m = jsonDecode(paidRaw) as Map<String, dynamic>;
+      paidData = m.map((k, v) => MapEntry(k, (v as Map<String, dynamic>).map((k2, v2) => MapEntry(k2, v2 as bool))));
+    }
+    if (!paidData.containsKey(_currentMonthKey)) {
+      paidData[_currentMonthKey] = {for (final item in kRecurringItems) item.name: false};
+      await _savePaid(paidData);
+    }
+
     setState(() {
       _byMonth = data;
+      _paidByMonth = paidData;
       _loading = false;
     });
   }
@@ -69,6 +82,19 @@ class _RecurringExpensesScreenState extends State<RecurringExpensesScreen> {
   Future<void> _saveAll(Map<String, Map<String, double>> data) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_storageKey, jsonEncode(data));
+  }
+
+  Future<void> _savePaid(Map<String, Map<String, bool>> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_paidKey, jsonEncode(data));
+  }
+
+  void _togglePaid(String name) {
+    setState(() {
+      final monthMap = _paidByMonth.putIfAbsent(_currentMonthKey, () => {});
+      monthMap[name] = !(monthMap[name] ?? false);
+    });
+    _savePaid(_paidByMonth);
   }
 
   void _editAmount(String name) {
@@ -115,6 +141,7 @@ class _RecurringExpensesScreenState extends State<RecurringExpensesScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Month: $_currentMonthKey', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('Paid: ${_paidByMonth[_currentMonthKey]?.values.where((v) => v).length ?? 0} / ${kRecurringItems.length}'),
                   Text('Total: ₹${total.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 ],
               ),
@@ -127,9 +154,17 @@ class _RecurringExpensesScreenState extends State<RecurringExpensesScreen> {
             ),
             ...kRecurringItems.where((i) => i.category == cat).map((item) {
               final amount = current[item.name] ?? item.defaultAmount;
+              final paid = _paidByMonth[_currentMonthKey]?[item.name] ?? false;
               return Card(
                 child: ListTile(
-                  title: Text(item.name),
+                  leading: Checkbox(value: paid, onChanged: (_) => _togglePaid(item.name)),
+                  title: Text(
+                    item.name,
+                    style: TextStyle(
+                      decoration: paid ? TextDecoration.lineThrough : null,
+                      color: paid ? Colors.grey : null,
+                    ),
+                  ),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text('₹${amount.toStringAsFixed(0)}'),
                     IconButton(icon: const Icon(Icons.edit, size: 18), onPressed: () => _editAmount(item.name)),
