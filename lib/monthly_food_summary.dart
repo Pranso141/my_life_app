@@ -11,7 +11,7 @@ class MonthlyFoodSummaryScreen extends StatefulWidget {
 }
 
 class _MonthlyFoodSummaryScreenState extends State<MonthlyFoodSummaryScreen> {
-  Map<String, double> _dailyTotals = {}; // date -> total spend
+  Map<String, double> _dailyTotals = {};
   bool _loading = true;
 
   @override
@@ -22,21 +22,25 @@ class _MonthlyFoodSummaryScreenState extends State<MonthlyFoodSummaryScreen> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final actRaw = prefs.getString('meal_activation_by_date');
+    final ticksRaw = prefs.getString('food_ticks_by_date');
     final extRaw = prefs.getString('meal_extra_by_date');
-    final Map<String, int> activation = actRaw != null
-        ? (jsonDecode(actRaw) as Map<String, dynamic>).map((k, v) => MapEntry(k, v as int))
+    final Map<String, List<dynamic>> ticks = ticksRaw != null
+        ? (jsonDecode(ticksRaw) as Map<String, dynamic>).map((k, v) => MapEntry(k, v as List<dynamic>))
         : {};
     final Map<String, List<dynamic>> extras = extRaw != null
         ? (jsonDecode(extRaw) as Map<String, dynamic>).map((k, v) => MapEntry(k, v as List<dynamic>))
         : {};
 
     final Map<String, double> totals = {};
-    final allDates = <String>{...activation.keys, ...extras.keys};
+    final allDates = <String>{...ticks.keys, ...extras.keys};
     for (final date in allDates) {
       double total = 0;
-      final dayIndex = activation[date];
-      if (dayIndex != null) total += kMealCycle[dayIndex].cost;
+      final foodNames = ticks[date] ?? [];
+      final allOptions = [...kLunchOptions, ...kDinnerOptions];
+      for (final name in foodNames) {
+        final match = allOptions.where((o) => o.name == name);
+        if (match.isNotEmpty) total += match.first.cost;
+      }
       final ex = extras[date] ?? [];
       for (final e in ex) {
         total += (e['cost'] as num).toDouble();
